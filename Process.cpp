@@ -6,8 +6,8 @@
 
 
 // implement constructor
-Process::Process(int pid, const string& pname, vector<Instruction>&& inst, const string& timestamp)
-    : id(pid), name(pname), instructions(move(inst)), creation_timestamp(timestamp) {
+Process::Process(int pid, const string& pname, vector<Instruction>&& inst, size_t final_total_instructions, const string& timestamp)
+    : id(pid), name(pname), instructions(move(inst)), total_instruction_count(final_total_instructions), creation_timestamp(timestamp) {
     creation_time_t = time(nullptr);
 }
 
@@ -20,7 +20,7 @@ size_t Process::get_executed_count() const {
 }
 
 size_t Process::get_total_instructions() const {
-    return instructions.size();
+    return total_instruction_count;
 }
 
 void Process::execute_instruction(int core_id, int current_tick, int delay_per_exec) {

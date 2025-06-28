@@ -20,6 +20,10 @@ public:
     vector<Instruction> instructions;
     unordered_map<string, uint16_t> variables;
     
+private: 
+    size_t total_instruction_count; 
+
+public:
     // state
     atomic<size_t> instruction_pointer{0};
     atomic<bool> is_finished{false}; 
@@ -33,7 +37,7 @@ public:
     mutable mutex data_mutex; 
 
     // constructor declaration
-    Process(int pid, const string& pname, vector<Instruction>&& inst, const string& timestamp);
+    Process(int pid, const string& pname, vector<Instruction>&& inst, size_t final_total_instructions, const string& timestamp);
 
     // cpu tick
     void execute_instruction(int core_id, int current_tick, int delay_per_exec);
