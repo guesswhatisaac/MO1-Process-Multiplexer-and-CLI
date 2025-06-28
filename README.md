@@ -20,12 +20,12 @@ How to Run:
 4. Compile the program:
    - Using g++:
      ```
-     g++ main.cpp -o csopesy
+     g++ main.cpp Scheduler.cpp Process.cpp -o main
      ```
   - Or simply run/debug from your IDE
 5. Run the program:
    ```
-   ./csopesy
+   main.exe
    ```
 
 Entry Point:
