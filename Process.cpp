@@ -95,8 +95,17 @@ void Process::execute_single_instruction(const Instruction& instruction, int cor
                 const string& dest_var = get<string>(instruction.args[0]);
                 uint16_t val1 = resolve_value(instruction.args[1]);
                 uint16_t val2 = resolve_value(instruction.args[2]);
-                variables[dest_var] = val1 + val2;
+
+                uint32_t result = static_cast<uint32_t>(val1) + val2; // use a larger type to check for overflow
+                if (result > 65535) { // 65535 is max for uint16_t
+                    variables[dest_var] = 65535; // clamp to max
+                } else {
+                    variables[dest_var] = static_cast<uint16_t>(result);
+                }
+
             }
+
+            
             break;
         }
         
@@ -105,7 +114,11 @@ void Process::execute_single_instruction(const Instruction& instruction, int cor
                 const string& dest_var = get<string>(instruction.args[0]);
                 uint16_t val1 = resolve_value(instruction.args[1]);
                 uint16_t val2 = resolve_value(instruction.args[2]);
-                variables[dest_var] = val1 - val2;
+                if (val1 < val2) { // check underflow
+                    variables[dest_var] = 0; // clamp to 0
+                } else {
+                    variables[dest_var] = val1 - val2;
+                }
             }
             break;
         }

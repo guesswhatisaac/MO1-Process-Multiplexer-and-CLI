@@ -1,7 +1,4 @@
-
-
-
 1.) open ucrt64
-2.) cd to directory of mco1 ($ cd "C:/Users/risaa/Documents/GitHub/CSOPESY-Group3/MCO1_NathanImplementation")
+2.) cd to directory of mco1 ($ cd "C:/Users/risaa/Documents/GitHub/MO1-Process-Multiplexer-and-CLI")
 3.) $ g++ -g -std=c++17 main.cpp Scheduler.cpp Process.cpp -o main.exe
 4.) ./main
