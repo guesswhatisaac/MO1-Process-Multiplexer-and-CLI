@@ -49,8 +49,8 @@ private:
     void worker_thread_loop(int core_id);
     void process_generator_loop();
     void main_scheduler_loop();
-    vector<Instruction> generate_instructions(int num_instructions, vector<string>& declared_vars, int depth);
-    
+    vector<Instruction> generate_instructions(int num_instructions, vector<string>& declared_vars, int depth, int& potential_total_instructions);
+        
     Config config;
     atomic<bool> is_initialized{false};
     atomic<bool> is_shutting_down{false};

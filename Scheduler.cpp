@@ -57,10 +57,10 @@ void Scheduler::add_new_process(const string& name) {
     
 
     vector<string> declared_vars;
-    // clarence mod: create a helper function to generate instructions to accomodate recursive FOR loops (to track depth)
-    vector<Instruction> instructions = generate_instructions(num_instructions, declared_vars, 0);
+    int potential_total = 0; // Initialize the counter for the unrolled size
 
-    
+    vector<Instruction> instructions = generate_instructions(num_instructions, declared_vars, 0, potential_total);
+
     auto now = time(nullptr);
     tm localTime;
     localtime_s(&localTime, &now);
@@ -80,72 +80,96 @@ void Scheduler::add_new_process(const string& name) {
     cv.notify_one();
 }
 
-// helper function for FOR LOOP
+
 vector<Instruction> Scheduler::generate_instructions(
     int num_instructions,
     vector<string>& declared_vars,
-    int depth
+    int depth,
+    int& potential_total_instructions // Pass the total by reference
 ) {
     random_device rd;
     mt19937 gen(rd());
-
     vector<Instruction> instructions;
-    uniform_int_distribution<> type_dist(0, 9); // 0-4 PRINT, 5 DECLARE, 6 ADD, 7 SUBTRACT, 8 SLEEP, 9 FOR
+    uniform_int_distribution<> type_dist(0, 9); 
 
     for (int i = 0; i < num_instructions; ++i) {
+        if (potential_total_instructions >= config.max_ins) {
+            break; 
+        }
         int instruction_choice = type_dist(gen);
 
-        // PRINT
-        if (instruction_choice >= 0 && instruction_choice <= 4) {
-            instructions.push_back({InstructionType::PRINT, {}});
-        }
-        // DECLARE
-        else if (instruction_choice == 5) {
-            string new_var_name = "v" + to_string(declared_vars.size());
-            declared_vars.push_back(new_var_name);
-            uniform_int_distribution<uint16_t> val_dist(0, 1000);
-            instructions.push_back({InstructionType::DECLARE, {new_var_name, val_dist(gen)}});
-        }
-        // ADD or SUBTRACT (needs at least 2 vars)
-        else if ((instruction_choice == 6 || instruction_choice == 7) && declared_vars.size() >= 2) {
-            uniform_int_distribution<size_t> var_idx_dist(0, declared_vars.size() - 1);
-            string src_var1 = declared_vars[var_idx_dist(gen)];
-            string src_var2 = declared_vars[var_idx_dist(gen)];
-            string dest_var = declared_vars[var_idx_dist(gen)];
-            if (instruction_choice == 6) {
-                instructions.push_back({InstructionType::ADD, {dest_var, src_var1, src_var2}});
-            } else {
-                instructions.push_back({InstructionType::SUBTRACT, {dest_var, src_var1, src_var2}});
-            }
-        }
-        // SLEEP
-        else if (instruction_choice == 8) {
-            uniform_int_distribution<uint16_t> sleep_dist(5, 20);
-            instructions.push_back({InstructionType::SLEEP, {sleep_dist(gen)}});
-        }
-        // FOR LOOP (only if depth < 3)
-        else if (instruction_choice == 9 && depth < 3) {
+        // Check if we can generate a FOR loop
+        bool can_generate_for = (instruction_choice == 9 && depth < 3);
+
+        if (can_generate_for) {
             uniform_int_distribution<uint16_t> repeat_dist(2, 10);
             uint16_t repeats = repeat_dist(gen);
+            
             uniform_int_distribution<> inner_instr_count_dist(2, 10);
             int inner_count = inner_instr_count_dist(gen);
-            // Recursively generate inner instructions, increasing depth
-            vector<Instruction> inner_instructions = generate_instructions(inner_count, declared_vars, depth + 1);
             
-            Instruction for_loop_instr;
-            for_loop_instr.type = InstructionType::FOR;
-            for_loop_instr.for_block = move(inner_instructions);
-            for_loop_instr.for_repeats = repeats;
-            
-            instructions.push_back(move(for_loop_instr));
+            // Recursively generate inner instructions to see how big they would be
+            int inner_potential_total = 0;
+            vector<Instruction> inner_instructions = generate_instructions(inner_count, declared_vars, depth + 1, inner_potential_total);
+
+            if (!inner_instructions.empty() && (potential_total_instructions + (inner_potential_total * repeats) <= config.max_ins)) {
+                Instruction for_loop_instr;
+                for_loop_instr.type = InstructionType::FOR;
+                for_loop_instr.for_block = move(inner_instructions);
+                for_loop_instr.for_repeats = repeats;
+                instructions.push_back(move(for_loop_instr));
+                
+                potential_total_instructions += (inner_potential_total * repeats);
+            } else {
+                // It doesn't fit or inner block is empty. Generate a simple PRINT instead.
+                instructions.push_back({InstructionType::PRINT, {}});
+                potential_total_instructions++;
+            }
+
         }
-        // fallback to PRINT if not enough vars or can't generate
+        // Fallback for all non-FOR instructions
         else {
-            instructions.push_back({InstructionType::PRINT, {}});
+            if (instruction_choice >= 0 && instruction_choice <= 4) {
+                instructions.push_back({InstructionType::PRINT, {}});
+            }
+            // PRINT
+            else if (instruction_choice >= 0 && instruction_choice <= 4) {
+                instructions.push_back({InstructionType::PRINT, {}});
+            }
+            // DECLARE
+            else if (instruction_choice == 5) {
+                string new_var_name = "v" + to_string(declared_vars.size());
+                declared_vars.push_back(new_var_name);
+                uniform_int_distribution<uint16_t> val_dist(0, 1000);
+                instructions.push_back({InstructionType::DECLARE, {new_var_name, val_dist(gen)}});
+            }
+            // ADD or SUBTRACT (needs at least 2 vars)
+            else if ((instruction_choice == 6 || instruction_choice == 7) && declared_vars.size() >= 2) {
+                uniform_int_distribution<size_t> var_idx_dist(0, declared_vars.size() - 1);
+                string src_var1 = declared_vars[var_idx_dist(gen)];
+                string src_var2 = declared_vars[var_idx_dist(gen)];
+                string dest_var = declared_vars[var_idx_dist(gen)];
+                if (instruction_choice == 6) {
+                    instructions.push_back({InstructionType::ADD, {dest_var, src_var1, src_var2}});
+                } else {
+                    instructions.push_back({InstructionType::SUBTRACT, {dest_var, src_var1, src_var2}});
+                }
+            }
+            // SLEEP
+            else if (instruction_choice == 8) {
+                uniform_int_distribution<uint16_t> sleep_dist(5, 20);
+                instructions.push_back({InstructionType::SLEEP, {sleep_dist(gen)}});
+            }
+            else {
+                instructions.push_back({InstructionType::PRINT, {}});
+                potential_total_instructions++; // Every non-FOR instruction adds 1 to the total
+
+            }
         }
     }
     return instructions;
 }
+
 
 void Scheduler::main_scheduler_loop() {
     while (!is_shutting_down) {
