@@ -46,6 +46,7 @@
         "xutility": "cpp",
         "thread": "cpp",
         "vector": "cpp",
-        "unordered_map": "cpp"
+        "unordered_map": "cpp",
+        "mutex": "cpp"
     }
 }

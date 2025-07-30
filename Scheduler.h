@@ -1,5 +1,6 @@
 #pragma once
 #include "Process.h"
+#include "MemoryAllocator.h" 
 #include <vector>
 #include <queue>
 #include <map>
@@ -25,6 +26,11 @@ struct Config {
     int min_ins = 100;
     int max_ins = 500;
     int delay_per_exec = 0;
+
+    int max_overall_mem = 16384;
+    int mem_per_frame = 16; 
+    int mem_per_proc = 4096;
+
 };
 
 class Scheduler {
@@ -56,6 +62,8 @@ private:
     atomic<bool> is_shutting_down{false};
     atomic<bool> generate_processes{false};
     
+    atomic<bool> is_scheduler_running{false};
+
     atomic<int> active_process_count{0};
 
     atomic<int> cpu_tick{0};
@@ -67,6 +75,8 @@ private:
 
     queue<shared_ptr<Process>> ready_queue;
     vector<shared_ptr<Process>> all_processes;
+
+    unique_ptr<MemoryAllocator> memory_manager;
 
     mutex queue_mutex;
     mutex process_list_mutex;

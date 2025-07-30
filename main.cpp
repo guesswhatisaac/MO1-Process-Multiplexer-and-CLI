@@ -105,6 +105,7 @@ int main() {
         else if (command == "scheduler-start") {
             cout << "Starting process generation...\n";
             scheduler.start_process_generation();
+            
         }
         else if (command == "scheduler-stop") {
             cout << "Stopping process generation...\n";
@@ -260,6 +261,11 @@ void initialize(Scheduler& scheduler, Config& config, bool& initialized) {
         else if (key == "min-ins") file >> config.min_ins;
         else if (key == "max-ins") file >> config.max_ins;
         else if (key == "delay-per-exec") file >> config.delay_per_exec;
+
+        else if (key == "max-overall-mem") file >> config.max_overall_mem;
+        else if (key == "mem-per-frame") file >> config.mem_per_frame;
+        else if (key == "mem-per-proc") file >> config.mem_per_proc;
+
     }
     file.close();
 
@@ -275,6 +281,9 @@ void initialize(Scheduler& scheduler, Config& config, bool& initialized) {
     cout << "Min Instructions: " << config.min_ins << "\n";
     cout << "Max Instructions: " << config.max_ins << "\n";
     cout << "Delay per Execution: " << config.delay_per_exec << "\n";
+    cout << "Max Overall Memory: " << config.max_overall_mem << " bytes\n";
+    cout << "Memory per Frame: " << config.mem_per_frame << " bytes\n";
+    cout << "Memory per Process: " << config.mem_per_proc << " bytes\n";
     cout << "------------------------------------------\n\n";
 }
 

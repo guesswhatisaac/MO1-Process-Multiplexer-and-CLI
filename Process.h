@@ -29,6 +29,9 @@ public:
     atomic<bool> is_finished{false}; 
     int core_assigned = -1;
 
+    int memory_size = 0;     
+    atomic<int> base_address{-1};    
+
     // For sleeping
     atomic<int> sleep_until_tick{0}; 
 

@@ -15,6 +15,8 @@ void Scheduler::initialize(const Config& cfg) {
     config = cfg;
     is_initialized = true;
 
+    memory_manager = make_unique<MemoryAllocator>(config.max_overall_mem);
+
     // Start main scheduler/tick thread
     scheduler_thread_handle = thread(&Scheduler::main_scheduler_loop, this);
 
@@ -39,12 +41,16 @@ void Scheduler::shutdown() {
 
 void Scheduler::start_process_generation() {
     if (generate_processes.exchange(true)) return; // Already running
+
+    is_scheduler_running = true;
+
     if (process_generator_thread_handle.joinable()) process_generator_thread_handle.join();
     process_generator_thread_handle = thread(&Scheduler::process_generator_loop, this);
 }
 
 void Scheduler::stop_process_generation() {
     generate_processes = false;
+    is_scheduler_running = false;
 }
 
 void Scheduler::add_new_process(const string& name) {
@@ -68,6 +74,8 @@ void Scheduler::add_new_process(const string& name) {
     strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", &localTime);
     
     auto new_proc = make_shared<Process>(next_pid++, name, move(instructions), static_cast<size_t>(potential_total), string(buffer));
+    
+    new_proc->memory_size = config.mem_per_proc;
 
     {
         lock_guard<mutex> lock(process_list_mutex);
@@ -157,9 +165,18 @@ vector<Instruction> Scheduler::generate_instructions(
 
 void Scheduler::main_scheduler_loop() {
     while (!is_shutting_down) {
-        this_thread::sleep_for(chrono::milliseconds(100)); 
-        cpu_tick++;
-        cv.notify_all(); 
+        if (is_scheduler_running.load()) {
+            cpu_tick++;
+
+            if (cpu_tick.load() > 0 && (cpu_tick.load() % config.quantum_cycles == 0)) {
+                lock_guard<mutex> lock(process_list_mutex);
+                memory_manager->generate_snapshot(cpu_tick.load(), all_processes);
+            }
+            
+            cv.notify_all();
+        }
+        
+        this_thread::sleep_for(chrono::milliseconds(100));
     }
 }
 
@@ -179,18 +196,40 @@ void Scheduler::process_generator_loop() {
 
 void Scheduler::worker_thread_loop(int core_id) {
     while (!is_shutting_down) {
-        shared_ptr<Process> current_process;
+       shared_ptr<Process> current_process;
 
         {
             unique_lock<mutex> lock(queue_mutex);
-            cv.wait(lock, [this] { return !ready_queue.empty() || is_shutting_down; });
+            cv.wait(lock, [this] { 
+                return (is_scheduler_running.load() && !ready_queue.empty()) || is_shutting_down.load(); 
+            });
+
             if (is_shutting_down) return;
-            
+
+            if (!is_scheduler_running.load()) {
+                continue;
+            }
+
             current_process = ready_queue.front();
             ready_queue.pop();
-            active_process_count++;
         }
 
+        // --- MEMORY ALLOCATION LOGIC ---
+        // if process is not in memory, try to allocate 
+        if (current_process->base_address.load() == -1) {
+            int start_address = memory_manager->allocate(current_process->id, current_process->memory_size);
+            if (start_address != -1) { // successful allocation
+                current_process->base_address = start_address;
+            } else { // allocation failed
+                lock_guard<mutex> lock(queue_mutex);
+                ready_queue.push(current_process);
+                cv.notify_one(); 
+                continue; 
+            }
+        }
+        
+        // --- PROCESS EXECUTION LOGIC ---
+        active_process_count++;
         current_process->core_assigned = core_id;
 
         int quantum = (config.scheduler == SchedulingAlgorithm::RR) ? config.quantum_cycles : -1;
@@ -198,34 +237,35 @@ void Scheduler::worker_thread_loop(int core_id) {
 
         while (!current_process->is_finished.load() && !is_shutting_down) {
             if (current_process->is_sleeping(cpu_tick.load())) {
-                this_thread::sleep_for(chrono::milliseconds(50)); 
+                this_thread::sleep_for(chrono::milliseconds(50));
                 continue;
             }
             
             current_process->execute_instruction(core_id, cpu_tick.load(), config.delay_per_exec);
             instructions_executed++;
 
-            this_thread::sleep_for(chrono::milliseconds(1)); 
-
+            this_thread::sleep_for(chrono::milliseconds(1));
 
             if (quantum != -1 && instructions_executed >= quantum) {
-                break; // Quantum expired
+                break; 
             }
         }
         
-        current_process->core_assigned = -1; 
+        current_process->core_assigned = -1;
+        active_process_count--;
 
-        if (!current_process->is_finished.load()) {
-            // not finished, so put it back on the queue
+        // --- POST-EXECUTION LOGIC ---
+        if (current_process->is_finished.load()) { // process finished, deallocate its memory            
+            memory_manager->deallocate(current_process->id);
+            current_process->base_address = -1;
+        } else if (!is_shutting_down) { // process not finished, put it back on the queue
             lock_guard<mutex> lock(queue_mutex);
             ready_queue.push(current_process);
         }
 
-        active_process_count--; 
-        cv.notify_one(); 
+        cv.notify_one();
     }
 }
-
 shared_ptr<Process> Scheduler::find_process(const string& name) {
     lock_guard<mutex> lock(process_list_mutex);
     for (const auto& proc : all_processes) {
