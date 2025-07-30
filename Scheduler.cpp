@@ -50,7 +50,7 @@ void Scheduler::start_process_generation() {
 
 void Scheduler::stop_process_generation() {
     generate_processes = false;
-    is_scheduler_running = false;
+    // is_scheduler_running = false;
 }
 
 void Scheduler::add_new_process(const string& name) {
@@ -237,8 +237,9 @@ void Scheduler::worker_thread_loop(int core_id) {
 
         while (!current_process->is_finished.load() && !is_shutting_down) {
             if (current_process->is_sleeping(cpu_tick.load())) {
-                this_thread::sleep_for(chrono::milliseconds(50));
-                continue;
+                // this_thread::sleep_for(chrono::milliseconds(50));
+                // continue;
+                break;
             }
             
             current_process->execute_instruction(core_id, cpu_tick.load(), config.delay_per_exec);
