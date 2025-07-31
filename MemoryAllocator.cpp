@@ -70,13 +70,14 @@ void MemoryAllocator::generate_snapshot(int quantum_cycle, const std::vector<std
 
     time_t now = time(nullptr);
     tm localTime;
-    localtime_s(&localTime, &now);
+    localtime_s(&localTime, &now); // Use localtime_s for Windows, localtime for Linux/macOS
     char buffer[100];
     strftime(buffer, sizeof(buffer), "%m/%d/%Y, %I:%M:%S %p", &localTime);
 
     int processes_in_memory_count = 0;
     std::map<int, std::shared_ptr<Process>> active_processes;
     for(const auto& proc : all_processes) {
+        // Only consider processes that are currently in memory and not finished
         if (proc->base_address != -1 && !proc->is_finished.load()) {
             processes_in_memory_count++;
             active_processes[proc->id] = proc;
@@ -92,19 +93,41 @@ void MemoryAllocator::generate_snapshot(int quantum_cycle, const std::vector<std
     int last_pid = -1;
     for (int i = 0; i < total_memory_size; ++i) {
         if (memory[i] != last_pid) {
+            // End of previous block
             if (last_pid != 0 && last_pid != -1) {
-                file << "----end---- " << i - 1 << " (" << active_processes[last_pid]->name << ")\n";
-                file << "|\n";
+                // Check if last_pid is in active_processes before accessing its name
+                if (active_processes.count(last_pid)) {
+                    file << "----end---- " << i - 1 << " (" << active_processes[last_pid]->name << ")\n";
+                    file << "|\n";
+                } else {
+                    file << "----end---- " << i - 1 << " (PID " << last_pid << " - Status Unknown/Finished)\n";
+                    file << "|\n";
+                }
             }
-            if (memory[i] != 0) {
-                file << "|\n";
-                file << "----start---- " << i << " (" << active_processes[memory[i]]->name << ")\n";
+            
+            // Start of new block
+            if (memory[i] != 0) { // If it's not a free block
+                // Check if current memory[i] is in active_processes before accessing its name
+                if (active_processes.count(memory[i])) {
+                    file << "|\n";
+                    file << "----start---- " << i << " (" << active_processes[memory[i]]->name << ")\n";
+                } else {
+                    // This case indicates memory[i] holds a process ID but the process is not 'active'
+                    // (e.g., finished but memory not yet deallocated).
+                    file << "|\n";
+                    file << "----start---- " << i << " (PID " << memory[i] << " - Status Unknown/Finished)\n";
+                }
             }
             last_pid = memory[i];
         }
     }
+    // Handle the very last block in memory
     if (last_pid != 0) {
-        file << "----end---- " << total_memory_size - 1 << " (" << active_processes[last_pid]->name << ")\n";
+        if (active_processes.count(last_pid)) {
+            file << "----end---- " << total_memory_size - 1 << " (" << active_processes[last_pid]->name << ")\n";
+        } else {
+            file << "----end---- " << total_memory_size - 1 << " (PID " << last_pid << " - Status Unknown/Finished)\n";
+        }
     }
 
     file.close();
