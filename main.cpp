@@ -15,7 +15,9 @@
 #include <chrono>
 #include <iomanip>
 #include <memory>
+#include <optional> // new mod
 #include "Scheduler.h"
+#include "MemoryManager.h" // New header
 
 using namespace std;
 
@@ -35,7 +37,14 @@ void clear();
 void display_process_screen(shared_ptr<Process> process);
 void list_screens(Scheduler& scheduler, const Config& config);
 
+// new functions
+void process_smi(Scheduler& scheduler);
+void vmstat(Scheduler& scheduler);
+bool is_power_of_two(int n);
+vector<Instruction> parse_instructions_from_string(const string& raw_instructions, int& error_code);
+
 // MAIN PROGRAM ============================================================================================================
+
 int main() {
     Scheduler scheduler;
     Config config;
@@ -54,8 +63,8 @@ int main() {
         }
 
         stringstream ss(input);
-        string command, opt, name;
-        ss >> command >> opt >> name;
+        string command;
+        ss >> command; 
 
         if (!initialized && command != "initialize" && command != "exit") {
             cout << "Please enter the command 'initialize' before using any other command.\n";
@@ -63,56 +72,125 @@ int main() {
         }
 
         if (command == "initialize") {
-             if (!opt.empty() || !name.empty()) {
-                 cout << "Initialize command is invalid. Please try again.\n";
-             }
-             else {
-                 initialize(scheduler, config, initialized);
-             }
+            string junk;
+            if (ss >> junk) {
+                cout << "Initialize command takes no arguments. Please try again.\n";
+            } else {
+                initialize(scheduler, config, initialized);
+            }
         }
-        else if (command == "screen" && (opt == "-s" || opt == "-r")) {
-             if (name.empty()) {
-                 cout << "Please provide a screen name.\n";
-             }
-             else {
-                auto process = scheduler.find_process(name);
-                if (opt == "-s") {
-                    if (process) {
-                        cout << "Screen '" << name << "' already exists. Use 'screen -r " << name << "' to attach.\n";
-                    } else {
-                        scheduler.add_new_process(name);
-                        cout << "Screen '" << name << "' created.\n";
-                        auto new_proc = scheduler.find_process(name);
-                        if(new_proc) display_process_screen(new_proc);
-                    }
-                } else { // -r
-                    if(process && !process->is_finished.load()) {
-                        display_process_screen(process);
-                    } else {
-                        // If the process is null (not found) OR it is finished, print error
-                        cout << "Process <" << name << "> not found.\n";
+        else if (command == "screen") {
+            string opt;
+            if (!(ss >> opt)) {
+                cout << "Please specify a screen option (e.g., -s, -c, -r, -ls).\n";
+                continue;
+            }
+
+            if (opt == "-s" || opt == "-c") {
+                string name, size_str;
+                if (!(ss >> name >> size_str)) {
+                    cout << "Usage: screen " << opt << " <name> <size>" << (opt == "-c" ? " \"<instructions>\"" : "") << "\n";
+                    continue;
+                }
+                
+                int mem_size;
+                try {
+                    mem_size = stoi(size_str);
+                } catch(...) {
+                    cout << "Invalid memory size specified.\n";
+                    continue;
+                }
+
+                if (mem_size < 64 || mem_size > 65536 || !is_power_of_two(mem_size)) {
+                    cout << "Invalid memory allocation. Size must be a power of 2 between 64 and 65536.\n";
+                } else if (scheduler.find_process(name)) {
+                    cout << "Screen '" << name << "' already exists.\n";
+                } else {
+                    if (opt == "-s") {
+                        scheduler.add_new_process(name, mem_size, nullopt);
+                        cout << "Screen '" << name << "' created with " << mem_size << " bytes of memory.\n";
+                    } else { // -c
+                        string instruction_str;
+                        getline(ss, instruction_str);
+
+                        size_t first = instruction_str.find_first_not_of(" \t\"");
+                        size_t last = instruction_str.find_last_not_of(" \t\"");
+                        if (string::npos != first && string::npos != last) {
+                            instruction_str = instruction_str.substr(first, (last - first + 1));
+                        } else {
+                            cout << "Usage: screen -c <name> <size> \"<instructions>\"\n";
+                            continue;
+                        }
+
+                        if (instruction_str.empty()) {
+                             cout << "Usage: screen -c <name> <size> \"<instructions>\"\n";
+                             continue;
+                        }
+
+                        int error_code = 0;
+                        vector<Instruction> instructions = parse_instructions_from_string(instruction_str, error_code);
+                        if (error_code == 1) {
+                            cout << "Invalid command: Instruction count must be between 1 and 50.\n";
+                        } else {
+                            scheduler.add_new_process(name, mem_size, instructions);
+                            cout << "Screen '" << name << "' created with custom instructions.\n";
+                        }
                     }
                 }
-             }
-        }
-        else if (command == "screen" && opt == "-ls") {
-            if (!name.empty()) {
-                cout << "Screen -ls should not include a screen name.\n";
-            } else {
-                list_screens(scheduler, config);
+            }
+            else if (opt == "-r") {
+                string name;
+                if (!(ss >> name)) {
+                    cout << "Usage: screen -r <process_name>\n";
+                    continue;
+                }
+                
+                auto process = scheduler.find_process(name);
+                if (process) {
+                    if (process->mem_violation.occurred) {
+                        tm localTime;
+                        localtime_s(&localTime, &process->mem_violation.timestamp);
+                        char buffer[10];
+                        strftime(buffer, sizeof(buffer), "%H:%M:%S", &localTime);
+                        cout << "Process <" << name << "> shut down due to memory access violation error at " << buffer << ". ";
+                        cout << "0x" << hex << process->mem_violation.address << dec << " invalid.\n";
+                    } else if (process->is_finished.load()) {
+                        cout << "Process <" << name << "> has finished execution.\n";
+                    } else {
+                        display_process_screen(process);
+                    }
+                } else {
+                    cout << "Process <" << name << "> not found.\n";
+                }
+            }
+            else if (opt == "-ls") {
+                string junk;
+                if (ss >> junk) {
+                    cout << "Screen -ls does not take any additional arguments.\n";
+                } else {
+                    list_screens(scheduler, config);
+                }
+            }
+            else {
+                cout << "Unknown screen command: " << opt << ". Use -s, -c, -r, or -ls.\n";
             }
         }
         else if (command == "scheduler-start") {
-            cout << "Starting process generation...\n";
             scheduler.start_process_generation();
-            
+            cout << "Starting process generation...\n";
         }
         else if (command == "scheduler-stop") {
-            cout << "Stopping process generation...\n";
             scheduler.stop_process_generation();
+            cout << "Stopping process generation...\n";
         }
         else if (command == "report-util") {
             report_util(scheduler, config);
+        }
+        else if (command == "process-smi") {
+            process_smi(scheduler);
+        }
+        else if (command == "vmstat") {
+            vmstat(scheduler);
         }
         else if (command == "clear") {
             clear();
@@ -130,7 +208,6 @@ int main() {
     cout << "Shutdown complete. Exiting." << endl;
     return 0;
 }
-
 
 // SCREEN FUNCTION DEFINITIONS ===================================================================================================
 
@@ -264,7 +341,8 @@ void initialize(Scheduler& scheduler, Config& config, bool& initialized) {
 
         else if (key == "max-overall-mem") file >> config.max_overall_mem;
         else if (key == "mem-per-frame") file >> config.mem_per_frame;
-        else if (key == "mem-per-proc") file >> config.mem_per_proc;
+        else if (key == "min-mem-per-proc") file >> config.min_mem_per_proc; // New
+        else if (key == "max-mem-per-proc") file >> config.max_mem_per_proc; // New
 
     }
     file.close();
@@ -283,9 +361,141 @@ void initialize(Scheduler& scheduler, Config& config, bool& initialized) {
     cout << "Delay per Execution: " << config.delay_per_exec << "\n";
     cout << "Max Overall Memory: " << config.max_overall_mem << " bytes\n";
     cout << "Memory per Frame: " << config.mem_per_frame << " bytes\n";
-    cout << "Memory per Process: " << config.mem_per_proc << " bytes\n";
+    cout << "Min Memory per Process: " << config.min_mem_per_proc << " bytes\n";    
+    cout << "Max Memory per Process: " << config.max_mem_per_proc << " bytes\n";
     cout << "------------------------------------------\n\n";
 }
+
+// mod
+bool is_power_of_two(int n) {
+    if (n <= 0) return false;
+    return (n & (n - 1)) == 0;
+}
+
+// Rudimentary parser for `screen -c`
+vector<Instruction> parse_instructions_from_string(const string& raw_instructions, int& error_code) {
+    vector<Instruction> parsed;
+    stringstream inst_stream(raw_instructions);
+    string segment;
+
+    while(getline(inst_stream, segment, ';')) {
+        segment.erase(0, segment.find_first_not_of(" \t\n\r"));
+        segment.erase(segment.find_last_not_of(" \t\n\r") + 1);
+        if (segment.empty()) continue;
+
+        stringstream single_inst_ss(segment);
+        string type_str;
+        single_inst_ss >> type_str;
+
+        Instruction inst;
+        if (type_str == "DECLARE") inst.type = InstructionType::DECLARE;
+        else if (type_str == "ADD") inst.type = InstructionType::ADD;
+        else if (type_str == "SUBTRACT") inst.type = InstructionType::SUBTRACT;
+        else if (type_str == "READ") inst.type = InstructionType::READ;
+        else if (type_str == "WRITE") inst.type = InstructionType::WRITE;
+        else if (type_str == "PRINT") inst.type = InstructionType::PRINT;
+        // Add other types as needed
+        else continue; // Skip unknown instruction
+
+        string arg;
+        while(single_inst_ss >> arg) {
+            if (arg.substr(0, 2) == "0x") { 
+                inst.args.push_back(stoi(arg, nullptr, 16));
+            } else if (all_of(arg.begin(), arg.end(), ::isdigit)) { 
+                inst.args.push_back(static_cast<uint16_t>(stoi(arg)));
+            } else { 
+                inst.args.push_back(arg);
+            }
+        }
+        parsed.push_back(inst);
+    }
+    
+    if (parsed.size() < 1 || parsed.size() > 50) {
+        error_code = 1; 
+    }
+
+    return parsed;
+}
+
+// Placeholder implementation for process-smi
+void process_smi(Scheduler& scheduler) {
+    // MemoryManager* mem_manager = scheduler.get_memory_manager();
+    // if (!mem_manager) {
+    //     cout << "Memory Manager not initialized." << endl;
+    //     return;
+    // }
+
+    cout << "+-----------------------------------------------------------------------------+\n";
+    cout << "| Process Status and Memory Information                                       |\n";
+    cout << "+-----------------------------------------------------------------------------+\n";
+    
+    // Placeholder Data
+    int total_mem = 16384; // mem_manager->get_total_memory();
+    int used_mem = 0; // mem_manager->get_used_memory();
+    float util = (total_mem > 0) ? (static_cast<float>(used_mem) / total_mem) * 100 : 0;
+    
+    cout << "| Memory Usage: " << used_mem << "B / " << total_mem << "B"
+         << " (" << fixed << setprecision(2) << util << "%)" << setw(30) << right << "|\n";
+    cout << "+-----------------------+---------+------------------+------------------------+\n";
+    cout << "| Process Name          | PID     | Memory Usage (B) | Status                 |\n";
+    cout << "+-----------------------+---------+------------------+------------------------+\n";
+
+    for (const auto& proc : scheduler.get_all_processes()) {
+        string status = "Finished";
+        if (proc->mem_violation.occurred) {
+            status = "MEM_FAULT";
+        } else if (!proc->is_finished.load()) {
+            status = (proc->core_assigned != -1) ? "Running" : "Waiting";
+        }
+
+        cout << "| " << left << setw(22) << proc->name
+             << "| " << setw(8) << proc->id
+             << "| " << setw(17) << proc->memory_size
+             << "| " << setw(23) << status << "|\n";
+    }
+    cout << "+-----------------------+---------+------------------+------------------------+\n";
+}
+
+
+// Placeholder implementation for vmstat
+void vmstat(Scheduler& scheduler) {
+    MemoryManager* mem_manager = scheduler.get_memory_manager();
+    if (!mem_manager) {
+        cout << "Error: Memory Manager not yet initialized." << endl;
+        return;
+    }
+
+    // --- Gather Data ---
+    // Get memory data (we'll show it in KB to match the vmstat example)
+    long long total_mem_kb = 16384 / 1024; // Placeholder until mem_manager is full
+    long long used_mem_kb = 0;             // Placeholder
+    // long long total_mem_kb = mem_manager->get_total_memory() / 1024;
+    // long long used_mem_kb = mem_manager->get_used_memory() / 1024;
+    long long free_mem_kb = total_mem_kb - used_mem_kb;
+    
+    uint64_t total_ticks = scheduler.get_total_ticks();
+    uint64_t active_ticks = scheduler.get_active_ticks();
+    uint64_t idle_ticks = (total_ticks > active_ticks) ? total_ticks - active_ticks : 0;
+
+    const PagingStats& stats = mem_manager->get_paging_stats();
+    uint64_t paged_in = stats.page_ins.load();
+    uint64_t paged_out = stats.page_outs.load();
+
+    // --- Display Data ---
+    cout << "\n--- System Virtual Memory Statistics ---\n";
+    cout << setw(12) << right << total_mem_kb << " K total memory\n";
+    cout << setw(12) << right << used_mem_kb << " K used memory\n";
+    cout << setw(12) << right << free_mem_kb << " K free memory\n";
+    cout << "----------------------------------------\n";
+    cout << setw(12) << right << total_ticks << " total cpu ticks\n";
+    cout << setw(12) << right << active_ticks << " active cpu ticks\n";
+    cout << setw(12) << right << idle_ticks << " idle cpu ticks\n";
+    cout << "----------------------------------------\n";
+    cout << setw(12) << right << paged_in << " pages paged in\n";
+    cout << setw(12) << right << paged_out << " pages paged out\n\n";
+}
+
+// end mod
 
 
 void report_util(Scheduler& scheduler, const Config& config) {

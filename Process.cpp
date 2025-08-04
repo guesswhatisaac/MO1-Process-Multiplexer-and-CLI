@@ -1,14 +1,26 @@
 #include "Process.h"
+#include "MemoryManager.h"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
 
-
-// implement constructor
 Process::Process(int pid, const string& pname, vector<Instruction>&& inst, size_t final_total_instructions, const string& timestamp)
     : id(pid), name(pname), instructions(move(inst)), total_instruction_count(final_total_instructions), creation_timestamp(timestamp) {
     creation_time_t = time(nullptr);
+}
+
+void Process::set_memory_violation(int invalid_address) {
+    if (!mem_violation.occurred) {
+        mem_violation.occurred = true;
+        mem_violation.address = invalid_address;
+        mem_violation.timestamp = time(nullptr);
+        is_finished = true; // Terminate the process immediately
+        
+        // Add a log entry about the violation
+        lock_guard<mutex> lock(data_mutex);
+        logs.push_back("FATAL: Memory Access Violation. Process terminated.");
+    }
 }
 
 bool Process::is_sleeping(int current_tick) const {
@@ -23,8 +35,8 @@ size_t Process::get_total_instructions() const {
     return total_instruction_count;
 }
 
-void Process::execute_instruction(int core_id, int current_tick, int delay_per_exec) {
-    if (is_finished.load() || is_sleeping(current_tick)) {
+void Process::execute_instruction(MemoryManager* mem_manager, int core_id, int current_tick, int delay_per_exec) {
+    if (is_finished.load() || is_sleeping(current_tick) || needs_page_fault_handling.load()) {
         return;
     }
 
@@ -33,28 +45,33 @@ void Process::execute_instruction(int core_id, int current_tick, int delay_per_e
         return;
     }
 
+    // Reset the flag before trying to execute.
+    needs_page_fault_handling = false; 
+
     const Instruction& instruction = instructions[instruction_pointer.load()];
     
     {
-        // uses data_mutex to protect shared data
         lock_guard<mutex> lock(data_mutex);
-        // nathan mod: passed current_tick to execute_single_instruction
-        execute_single_instruction(instruction, core_id, current_tick);
+        // Pass the memory manager to the internal function
+        execute_single_instruction(instruction, mem_manager, core_id, current_tick);
     }
 
-    instruction_pointer++;
+    // IMPORTANT: Only advance if the instruction succeeded without a page fault.
+    if (!needs_page_fault_handling.load()) {
+        instruction_pointer++;
 
-    if (delay_per_exec > 0) {
-        sleep_until_tick = current_tick + delay_per_exec;
-    }
+        if (delay_per_exec > 0) {
+            sleep_until_tick = current_tick + delay_per_exec;
+        }
 
-     if (instruction_pointer.load() >= instructions.size()) {
-        is_finished = true;
+        if (instruction_pointer.load() >= instructions.size()) {
+            is_finished = true;
+        }
     }
 }
 
-// nathan mod: added add sub declare print sleep instructions (FOR: to be implemented)
-void Process::execute_single_instruction(const Instruction& instruction, int core_id, int current_tick) {
+
+void Process::execute_single_instruction(const Instruction& instruction, MemoryManager* mem_manager, int core_id, int current_tick) {
     auto getCurrentTimestamp = []() {
         time_t now = time(nullptr);
         tm localTime;

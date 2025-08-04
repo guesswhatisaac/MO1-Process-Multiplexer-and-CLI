@@ -1,0 +1,8 @@
+CPU utilization: 0.00%
+Cores used: 0
+Cores available: 2
+
+Running processes:
+hi           (08/04/2025, 01:23:38 PM)  Core: wait   0 / 100
+
+Finished processes:

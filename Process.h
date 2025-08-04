@@ -5,10 +5,19 @@
 #include <atomic>
 #include <ctime>
 #include <mutex>
-#include <stack> 
+#include <optional>
 #include "Instruction.h"
 
 using namespace std;
+
+class MemoryManager; 
+
+struct MemoryViolation {
+    bool occurred = false;
+    int address = 0;
+    time_t timestamp;
+};
+
 
 class Process {
 public:
@@ -24,33 +33,34 @@ private:
     size_t total_instruction_count; 
 
 public:
-    // state
     atomic<size_t> instruction_pointer{0};
     atomic<bool> is_finished{false}; 
     int core_assigned = -1;
+    atomic<bool> needs_page_fault_handling{false}; // For memory management
 
     int memory_size = 0;     
-    atomic<int> base_address{-1};    
+    atomic<int> base_address{-1}; 
+    MemoryViolation mem_violation; 
 
-    // For sleeping
     atomic<int> sleep_until_tick{0}; 
 
-    // for logging
     vector<string> logs;
     mutable mutex data_mutex; 
 
-    // constructor declaration
     Process(int pid, const string& pname, vector<Instruction>&& inst, size_t final_total_instructions, const string& timestamp);
 
-    // cpu tick
-    void execute_instruction(int core_id, int current_tick, int delay_per_exec);
+    // mod cpu tick function declaration
+    void execute_instruction(MemoryManager* mem_manager, int core_id, int current_tick, int delay_per_exec);
 
-    // for screen -ls output
     size_t get_executed_count() const;
     size_t get_total_instructions() const;
     bool is_sleeping(int current_tick) const; 
 
+    // New method to set violation status
+    void set_memory_violation(int invalid_address);
+
 private:
     uint16_t resolve_value(const Value& value);
-    void execute_single_instruction(const Instruction& instr, int core_id, int current_tick);
+    // mod
+    void execute_single_instruction(const Instruction& instr, MemoryManager* mem_manager, int core_id, int current_tick);
 };

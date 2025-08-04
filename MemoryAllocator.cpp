@@ -1,5 +1,3 @@
-// MemoryAllocator.cpp
-
 #include "MemoryAllocator.h"
 #include "Process.h"
 #include <iostream>

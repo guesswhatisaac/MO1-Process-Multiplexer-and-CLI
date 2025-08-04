@@ -1,15 +1,17 @@
 #pragma once
 #include "Process.h"
-#include "MemoryAllocator.h" 
+#include "MemoryManager.h" 
 #include <vector>
 #include <queue>
 #include <map>
 #include <thread>
-#include <atomic>
+#include <atomic>              
 #include <mutex>
 #include <condition_variable>
-#include <memory> // For shared_ptr
+#include <memory>
 #include <random>
+#include <optional>
+#include <cstdint>              
 
 using namespace std;
 
@@ -27,10 +29,10 @@ struct Config {
     int max_ins = 500;
     int delay_per_exec = 0;
 
-    int max_overall_mem = 16384;
-    int mem_per_frame = 16; 
-    int mem_per_proc = 4096;
-
+    int max_overall_mem = 16384; 
+    int mem_per_frame = 256;    
+    int min_mem_per_proc = 1024;
+    int max_mem_per_proc = 4096;
 };
 
 class Scheduler {
@@ -42,14 +44,20 @@ public:
     void start_process_generation();
     void stop_process_generation();
     
-    void add_new_process(const string& name);
+    void add_new_process(const string& name, int memory_size, optional<vector<Instruction>> instructions_opt);
+    
     shared_ptr<Process> find_process(const string& name);
-
     vector<shared_ptr<Process>> get_running_processes();
     vector<shared_ptr<Process>> get_finished_processes();
+    vector<shared_ptr<Process>> get_all_processes();
     int get_cores_used();
     
+    MemoryManager* get_memory_manager() const;
     void shutdown();
+
+    // Getters for vmstat
+    uint64_t get_total_ticks() const;
+    uint64_t get_active_ticks() const;
 
 private:
     void worker_thread_loop(int core_id);
@@ -63,11 +71,12 @@ private:
     atomic<bool> generate_processes{false};
     
     atomic<bool> is_scheduler_running{false};
-
     atomic<int> active_process_count{0};
-
-    atomic<int> cpu_tick{0};
     atomic<int> next_pid{1};
+
+    // Counters for vmstat
+    atomic<int> cpu_tick{0};
+    atomic<uint64_t> active_ticks{0}; 
 
     vector<thread> worker_threads;
     thread process_generator_thread_handle;
@@ -76,7 +85,7 @@ private:
     queue<shared_ptr<Process>> ready_queue;
     vector<shared_ptr<Process>> all_processes;
 
-    unique_ptr<MemoryAllocator> memory_manager;
+    unique_ptr<MemoryManager> memory_manager;
 
     mutex queue_mutex;
     mutex process_list_mutex;

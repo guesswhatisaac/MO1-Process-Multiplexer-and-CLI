@@ -13,10 +13,13 @@ enum class InstructionType {
     ADD,
     SUBTRACT,
     SLEEP,
-    FOR
+    FOR,
+
+    READ,
+    WRITE
 };
 
-using Value = variant<string, uint16_t>;
+using Value = variant<string, uint16_t, int>;
 
 struct Instruction {
     InstructionType type;
