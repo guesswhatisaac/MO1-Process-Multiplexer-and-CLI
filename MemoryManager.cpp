@@ -66,6 +66,9 @@ std::optional<uint16_t> MemoryManager::read_memory(std::shared_ptr<Process> proc
         return std::nullopt; 
     }
     
+    pte.accessed = true;
+
+
     int frame_address = pte.frame_number * frame_size;
     uint16_t value = *reinterpret_cast<uint16_t*>(&physical_memory[frame_address + offset]);
     return value;
@@ -91,6 +94,8 @@ bool MemoryManager::write_memory(std::shared_ptr<Process> process, int virtual_a
     if (!pte.present) {
         return false; 
     }
+
+    pte.accessed = true;
 
     int frame_address = pte.frame_number * frame_size;
     *reinterpret_cast<uint16_t*>(&physical_memory[frame_address + offset]) = value;
@@ -190,3 +195,16 @@ int MemoryManager::get_used_memory() const {
 }
 int MemoryManager::get_free_memory() const { return total_memory_size - get_used_memory(); }
 const PagingStats& MemoryManager::get_paging_stats() const { return stats; }
+
+int MemoryManager::get_active_memory() const {
+    std::lock_guard<std::mutex> lock(memory_mutex);
+    int active_memory_size = 0;
+    for (const auto& pair : page_tables) {
+        for (const auto& pte : pair.second) {
+            if (pte.present && pte.accessed) {
+                active_memory_size += frame_size;
+            }
+        }
+    }
+    return active_memory_size;
+}
