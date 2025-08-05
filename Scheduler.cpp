@@ -107,6 +107,7 @@ void Scheduler::main_scheduler_loop() {
 }
 
 void Scheduler::process_generator_loop() {
+    if (config.batch_process_freq <= 0) return;
     random_device rd;
     mt19937 gen(rd());
     while (generate_processes && !is_shutting_down) {
