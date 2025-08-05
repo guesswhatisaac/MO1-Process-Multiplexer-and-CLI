@@ -1,4 +1,4 @@
-Group 3: MO2-Multitasking-OS-with-Memory-Management
+Group 3: MO2 Multitasking OS
 
 
 Members:
