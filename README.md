@@ -36,11 +36,14 @@ The entry class file containing the `main` function is:
 Commands:
 ---------
 - `initialize` : Initialize the system using `config.txt`
-- `screen -s <name>` : Create a new process screen.
+- `screen -s <name> <size>` : Create a new process screen.
 - `screen -r <name>` : Attach to an existing process screen
+- `screen -c <name> <size> <action>` : 
 - `screen -ls` : List all process screens
 - `scheduler-start` : Start process generation
 - `scheduler-stop` : Stop process generation
+- `process-smi` :
+- `vmstat` : 
 - `report-util` : Generate a utilization report in `csopesy-log.txt`
 - `clear` : Clear the screen
 - `exit` : Exit the program
