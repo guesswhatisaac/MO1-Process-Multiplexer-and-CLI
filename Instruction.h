@@ -14,7 +14,6 @@ enum class InstructionType {
     SUBTRACT,
     SLEEP,
     FOR,
-
     READ,
     WRITE
 };
@@ -23,7 +22,7 @@ using Value = variant<string, uint16_t, int>;
 
 struct Instruction {
     InstructionType type;
-    vector<Value> args; // can be variables or literals
+    vector<Value> args; 
     
     vector<Instruction> for_block; 
     uint16_t for_repeats = 0;

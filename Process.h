@@ -6,6 +6,7 @@
 #include <ctime>
 #include <mutex>
 #include <optional>
+#include <memory>
 #include "Instruction.h"
 
 using namespace std;
@@ -18,8 +19,7 @@ struct MemoryViolation {
     time_t timestamp;
 };
 
-
-class Process {
+class Process : public std::enable_shared_from_this<Process> {
 public:
     int id;
     string name;
@@ -27,40 +27,38 @@ public:
     time_t creation_time_t;
 
     vector<Instruction> instructions;
-    unordered_map<string, uint16_t> variables;
     
-private: 
-    size_t total_instruction_count; 
-
-public:
     atomic<size_t> instruction_pointer{0};
     atomic<bool> is_finished{false}; 
+    atomic<bool> needs_page_fault_handling{false};
+    atomic<int> faulting_address{-1}; 
     int core_assigned = -1;
-    atomic<bool> needs_page_fault_handling{false}; // For memory management
 
-    int memory_size = 0;     
-    atomic<int> base_address{-1}; 
-    MemoryViolation mem_violation; 
+    int memory_size = 0;   
+    MemoryViolation mem_violation;
+    static const int SYMBOL_TABLE_SIZE = 64;
 
     atomic<int> sleep_until_tick{0}; 
 
     vector<string> logs;
     mutable mutex data_mutex; 
-
+    
     Process(int pid, const string& pname, vector<Instruction>&& inst, size_t final_total_instructions, const string& timestamp);
 
-    // mod cpu tick function declaration
     void execute_instruction(MemoryManager* mem_manager, int core_id, int current_tick, int delay_per_exec);
-
+    
     size_t get_executed_count() const;
     size_t get_total_instructions() const;
     bool is_sleeping(int current_tick) const; 
 
-    // New method to set violation status
-    void set_memory_violation(int invalid_address);
+    void set_memory_violation(int address);
 
 private:
-    uint16_t resolve_value(const Value& value);
-    // mod
+    unordered_map<string, int> variable_offsets;
+    int next_variable_offset = 0;
+
+    size_t total_instruction_count; 
+
+    optional<uint16_t> resolve_value(MemoryManager* mem_manager, const Value& value, int& address);
     void execute_single_instruction(const Instruction& instr, MemoryManager* mem_manager, int core_id, int current_tick);
 };

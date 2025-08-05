@@ -5,13 +5,13 @@
 #include <queue>
 #include <map>
 #include <thread>
-#include <atomic>              
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
 #include <random>
 #include <optional>
-#include <cstdint>              
+#include <cstdint>
 
 using namespace std;
 
@@ -55,7 +55,6 @@ public:
     MemoryManager* get_memory_manager() const;
     void shutdown();
 
-    // Getters for vmstat
     uint64_t get_total_ticks() const;
     uint64_t get_active_ticks() const;
 
@@ -74,9 +73,8 @@ private:
     atomic<int> active_process_count{0};
     atomic<int> next_pid{1};
 
-    // Counters for vmstat
     atomic<int> cpu_tick{0};
-    atomic<uint64_t> active_ticks{0}; 
+    atomic<uint64_t> active_ticks{0};
 
     vector<thread> worker_threads;
     thread process_generator_thread_handle;
@@ -84,6 +82,9 @@ private:
 
     queue<shared_ptr<Process>> ready_queue;
     vector<shared_ptr<Process>> all_processes;
+
+    queue<shared_ptr<Process>> page_fault_wait_queue; 
+    mutex page_fault_mutex;
 
     unique_ptr<MemoryManager> memory_manager;
 
