@@ -413,6 +413,7 @@ void vmstat(Scheduler& scheduler, const Config& config) {
     if (!mem_manager) { cout << "Error: Memory Manager not initialized." << endl; return; }
     long long total_mem_kb = config.max_overall_mem / 1024;
     long long used_mem_kb = mem_manager->get_used_memory() / 1024;
+    long long active_mem_kb = mem_manager->get_active_memory() / 1024; 
     long long free_mem_kb = total_mem_kb - used_mem_kb;
     uint64_t total_ticks = scheduler.get_total_ticks();
     uint64_t active_ticks = scheduler.get_active_ticks();
@@ -423,6 +424,7 @@ void vmstat(Scheduler& scheduler, const Config& config) {
     cout << "\n--- System Virtual Memory Statistics ---\n";
     cout << setw(12) << right << total_mem_kb << " K total memory\n";
     cout << setw(12) << right << used_mem_kb << " K used memory\n";
+    cout << setw(12) << right << active_mem_kb << " K active memory\n"; 
     cout << setw(12) << right << free_mem_kb << " K free memory\n";
     cout << "----------------------------------------\n";
     cout << setw(12) << right << total_ticks << " total cpu ticks\n";

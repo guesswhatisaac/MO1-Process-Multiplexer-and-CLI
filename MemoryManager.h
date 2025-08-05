@@ -15,6 +15,7 @@
 struct PageTableEntry {
     bool present = false;
     bool dirty = false;
+    bool accessed = false; 
     int frame_number = -1;
     long long backing_store_location = -1;
 };
@@ -46,6 +47,7 @@ public:
     int get_total_memory() const;
     int get_used_memory() const;
     int get_free_memory() const;
+    int get_active_memory() const;
     const PagingStats& get_paging_stats() const;
 
 private:
